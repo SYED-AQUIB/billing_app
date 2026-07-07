@@ -1,0 +1,315 @@
+import 'dart:io';
+
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import '../models/category.dart';
+import '../models/product.dart';
+import '../providers/category_provider.dart';
+import '../providers/product_provider.dart';
+import '../utils/unit_types.dart';
+import '../widgets/image_picker_field.dart';
+
+class ProductsScreen extends StatefulWidget {
+  const ProductsScreen({super.key});
+
+  @override
+  State<ProductsScreen> createState() => _ProductsScreenState();
+}
+
+class _ProductsScreenState extends State<ProductsScreen> {
+  late final TextEditingController _searchController;
+
+  @override
+  void initState() {
+    super.initState();
+    _searchController = TextEditingController();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<CategoryProvider>().loadCategories();
+      context.read<ProductProvider>().loadProducts();
+    });
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _showProductDialog({Product? product}) async {
+    final categoryProvider = context.read<CategoryProvider>();
+    final productProvider = context.read<ProductProvider>();
+
+    final brandController = TextEditingController(text: product?.brand ?? '');
+    final nameController = TextEditingController(text: product?.name ?? '');
+    final unitTypeController = TextEditingController(text: product?.unitType ?? 'Kg');
+    final priceController = TextEditingController(
+      text: product?.pricePerUnit.toString() ?? '',
+    );
+    int? selectedCategoryId = product?.categoryId;
+    String? imagePath = product?.imagePath;
+
+    if (!mounted) {
+      return;
+    }
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (dialogContext, setState) {
+            return AlertDialog(
+              title: Text(product == null ? 'Add Product' : 'Edit Product'),
+              content: SingleChildScrollView(
+                child: SizedBox(
+                  width: 360,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      DropdownButtonFormField<int>(
+                        initialValue: selectedCategoryId,
+                        items: categoryProvider.categories.map((category) {
+                          return DropdownMenuItem<int>(
+                            value: category.id,
+                            child: Text(category.name),
+                          );
+                        }).toList(),
+                        onChanged: (value) {
+                          setState(() {
+                            selectedCategoryId = value;
+                          });
+                        },
+                        decoration: const InputDecoration(labelText: 'Category'),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: brandController,
+                        decoration: const InputDecoration(labelText: 'Brand'),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: nameController,
+                        decoration: const InputDecoration(labelText: 'Product Name'),
+                      ),
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<String>(
+                        initialValue: unitTypeController.text.isEmpty ? 'Kg' : unitTypeController.text,
+                        items: UnitTypes.values
+                            .map(
+                              (unitType) => DropdownMenuItem(value: unitType, child: Text(unitType)),
+                            )
+                            .toList(),
+                        onChanged: (value) {
+                          if (value != null) {
+                            unitTypeController.text = value;
+                            setState(() {});
+                          }
+                        },
+                        decoration: const InputDecoration(labelText: 'Unit Type'),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: priceController,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(labelText: 'Price Per Unit'),
+                      ),
+                      const SizedBox(height: 12),
+                      ImagePickerField(
+                        initialPath: imagePath,
+                        onPicked: (path) {
+                          imagePath = path;
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.of(dialogContext).pop(), child: const Text('Cancel')),
+                FilledButton(
+                  onPressed: () async {
+                    final categoryId = selectedCategoryId;
+                    final brand = brandController.text.trim();
+                    final name = nameController.text.trim();
+                    final unitType = unitTypeController.text.trim();
+                    final priceText = priceController.text.trim();
+
+                    if (categoryId == null || brand.isEmpty || name.isEmpty || unitType.isEmpty || priceText.isEmpty) {
+                      if (!mounted) {
+                        return;
+                      }
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('All fields are required')),
+                      );
+                      return;
+                    }
+
+                    final price = double.tryParse(priceText);
+                    if (price == null) {
+                      if (!mounted) {
+                        return;
+                      }
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Enter a valid price')),
+                      );
+                      return;
+                    }
+
+                    final productToSave = Product(
+                      id: product?.id,
+                      categoryId: categoryId,
+                      brand: brand,
+                      name: name,
+                      unitType: unitType,
+                      pricePerUnit: price,
+                      imagePath: imagePath,
+                      createdAt: product?.createdAt ?? DateTime.now(),
+                    );
+
+                    final success = product == null
+                        ? await productProvider.addProduct(productToSave)
+                        : await productProvider.updateProduct(productToSave);
+
+                    if (!mounted) {
+                      return;
+                    }
+
+                    if (success) {
+                      Navigator.of(context).pop();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text(product == null ? 'Product added' : 'Product updated')),
+                      );
+                    } else {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Unable to save product')),
+                      );
+                    }
+                  },
+                  child: const Text('Save'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _deleteProduct(Product product) async {
+    final provider = context.read<ProductProvider>();
+    final deleted = await provider.deleteProduct(product.id!);
+    if (!mounted) {
+      return;
+    }
+
+    if (deleted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Product deleted')),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Unable to delete product')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final productProvider = context.watch<ProductProvider>();
+    final categoryProvider = context.watch<CategoryProvider>();
+
+    final products = productProvider.products;
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Products')),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: TextField(
+              controller: _searchController,
+              onChanged: (value) {
+                productProvider.search(value);
+              },
+              decoration: const InputDecoration(
+                labelText: 'Search products',
+                prefixIcon: Icon(Icons.search),
+              ),
+            ),
+          ),
+          if (categoryProvider.isLoading || productProvider.isLoading)
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: CircularProgressIndicator(),
+            )
+          else if (products.isEmpty)
+            const Expanded(
+              child: Center(
+                child: Padding(
+                  padding: EdgeInsets.all(24),
+                  child: Text('No products found. Add one to start building your billing catalog.'),
+                ),
+              ),
+            )
+          else
+            Expanded(
+              child: ListView.separated(
+                padding: const EdgeInsets.all(16),
+                itemCount: products.length,
+                separatorBuilder: (_, _) => const SizedBox(height: 12),
+                itemBuilder: (context, index) {
+                  final product = products[index];
+                  final category = categoryProvider.categories.firstWhere(
+                    (item) => item.id == product.categoryId,
+                    orElse: () => Category(id: -1, name: 'Unknown', createdAt: DateTime.now()),
+                  );
+
+                  return Card(
+                    child: ListTile(
+                      leading: ClipRRect(
+                        borderRadius: BorderRadius.circular(10),
+                        child: product.imagePath != null && product.imagePath!.isNotEmpty
+                            ? Image.file(
+                                File(product.imagePath!),
+                                width: 48,
+                                height: 48,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, _, _) => const Icon(Icons.image_not_supported_outlined),
+                              )
+                            : const Icon(Icons.shopping_bag_outlined, size: 36),
+                      ),
+                      title: Text(product.name),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('${category.name} • ${product.brand}'),
+                          Text('${product.unitType} • ${product.pricePerUnit.toStringAsFixed(2)}'),
+                        ],
+                      ),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            onPressed: () => _showProductDialog(product: product),
+                            icon: const Icon(Icons.edit_outlined),
+                          ),
+                          IconButton(
+                            onPressed: () => _deleteProduct(product),
+                            icon: const Icon(Icons.delete_outline),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+        ],
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: categoryProvider.categories.isEmpty ? null : () => _showProductDialog(),
+        child: const Icon(Icons.add),
+      ),
+    );
+  }
+}
