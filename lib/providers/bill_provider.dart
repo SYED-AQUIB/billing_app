@@ -135,8 +135,13 @@ class BillProvider extends ChangeNotifier {
   void setCustomerDetails({String? name, String? phone}) {
     final normalizedName = name?.trim();
     final normalizedPhone = phone?.trim();
-    _customerName = normalizedName == null || normalizedName.isEmpty ? null : normalizedName;
-    _customerPhone = normalizedPhone == null || normalizedPhone.isEmpty ? null : normalizedPhone;
+    final customerName = normalizedName == null || normalizedName.isEmpty ? null : normalizedName;
+    final customerPhone = normalizedPhone == null || normalizedPhone.isEmpty ? null : normalizedPhone;
+    if (_customerName == customerName && _customerPhone == customerPhone) {
+      return;
+    }
+    _customerName = customerName;
+    _customerPhone = customerPhone;
     notifyListeners();
   }
 

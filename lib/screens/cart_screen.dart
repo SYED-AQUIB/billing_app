@@ -49,8 +49,7 @@ class _CartScreenState extends State<CartScreen> {
     final nameController = TextEditingController();
     final phoneController = TextEditingController();
 
-    final customerDetails = await showDialog<({String name, String phone})>(
-      context: context,
+    final customerDetails = await _showCompletedDialog<({String name, String phone})>(
       builder: (dialogContext) {
         return AlertDialog(
           title: const Text('Generate Bill'),
@@ -86,10 +85,9 @@ class _CartScreenState extends State<CartScreen> {
           ],
         );
       },
-    ).whenComplete(() {
-      nameController.dispose();
-      phoneController.dispose();
-    });
+    );
+    nameController.dispose();
+    phoneController.dispose();
 
     if (!mounted || customerDetails == null) {
       return;
@@ -99,11 +97,24 @@ class _CartScreenState extends State<CartScreen> {
     await _showBillPreview();
   }
 
+  /// Waits until the dialog overlay has been removed before state changes.
+  Future<T?> _showCompletedDialog<T>({required WidgetBuilder builder}) async {
+    final navigator = Navigator.of(context);
+    final route = DialogRoute<T>(
+      context: context,
+      builder: builder,
+      themes: InheritedTheme.capture(from: context, to: navigator.context),
+    );
+    final result = await navigator.push(route);
+    await route.completed;
+    return result;
+  }
+
   Future<void> _showBillPreview() async {
     final provider = context.read<BillProvider>();
     final customerName = provider.customerName?.trim();
-    final confirmed = await showDialog<bool>(
-      context: context,
+    final customerPhone = provider.customerPhone?.trim();
+    final confirmed = await _showCompletedDialog<bool>(
       builder: (dialogContext) {
         return AlertDialog(
           title: const Text('Bill Preview'),
@@ -116,8 +127,14 @@ class _CartScreenState extends State<CartScreen> {
                 children: [
                   Text('Bill Number: ${provider.billNumber}'),
                   const SizedBox(height: 8),
-                  Text('Customer: ${customerName == null || customerName.isEmpty ? 'Walk-in' : customerName}'),
-                  const SizedBox(height: 8),
+                  if (customerName != null && customerName.isNotEmpty) ...[
+                    Text('Customer: $customerName'),
+                    const SizedBox(height: 8),
+                  ],
+                  if (customerPhone != null && customerPhone.isNotEmpty) ...[
+                    Text('Phone: $customerPhone'),
+                    const SizedBox(height: 8),
+                  ],
                   ...provider.cartItems.map(
                     (item) => Padding(
                       padding: const EdgeInsets.only(bottom: 8),
@@ -158,8 +175,7 @@ class _CartScreenState extends State<CartScreen> {
 
   Future<void> _showAcknowledgementDialog() async {
     final provider = context.read<BillProvider>();
-    final confirmed = await showDialog<bool>(
-      context: context,
+    final confirmed = await _showCompletedDialog<bool>(
       builder: (dialogContext) {
         return AlertDialog(
           title: const Text('Bill Generated Successfully'),
@@ -179,27 +195,26 @@ class _CartScreenState extends State<CartScreen> {
       }
 
       if (saved) {
-        await showDialog<void>(
-          context: context,
+        final startNewBill = await _showCompletedDialog<bool>(
           builder: (dialogContext) {
             return AlertDialog(
               title: const Text('Bill Saved Successfully'),
               content: const Text('Start a new bill.'),
               actions: [
                 FilledButton(
-                  onPressed: () async {
-                    Navigator.of(dialogContext).pop();
-                    await context.read<BillProvider>().refreshBillNumber();
-                    if (mounted) {
-                      Navigator.of(context).pop();
-                    }
-                  },
+                  onPressed: () => Navigator.of(dialogContext).pop(true),
                   child: const Text('New Bill'),
                 ),
               ],
             );
           },
         );
+        if (startNewBill == true && mounted) {
+          await provider.refreshBillNumber();
+          if (mounted) {
+            Navigator.of(context).pop();
+          }
+        }
       } else {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Cart is empty')));
       }

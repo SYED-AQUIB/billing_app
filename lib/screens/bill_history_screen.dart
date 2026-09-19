@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../core/app_constants.dart';
@@ -16,6 +17,10 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
   String _filter = 'All';
   DateTime? _customStartDate;
   DateTime? _customEndDate;
+
+  String _formatBillDateTime(DateTime createdAt) {
+    return '${DateFormat('dd/MM/yyyy').format(createdAt)} • ${DateFormat('hh:mm a').format(createdAt)}';
+  }
 
   @override
   void initState() {
@@ -153,12 +158,17 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
                                       ],
                                     ),
                                     const SizedBox(height: 8),
-                                    Text('${bill.createdAt.day}/${bill.createdAt.month}/${bill.createdAt.year} • ${bill.createdAt.hour.toString().padLeft(2, '0')}:${bill.createdAt.minute.toString().padLeft(2, '0')}'),
+                                    Text(_formatBillDateTime(bill.createdAt)),
                                     const SizedBox(height: 4),
-                                    Text(bill.customerName ?? 'Walk-in Customer'),
+                                    if (bill.customerName != null && bill.customerName!.isNotEmpty) ...[
+                                      Text('Customer: ${bill.customerName}'),
+                                      const SizedBox(height: 4),
+                                    ],
+                                    if (bill.customerPhone != null && bill.customerPhone!.isNotEmpty) ...[
+                                      Text('Phone: ${bill.customerPhone}'),
+                                      const SizedBox(height: 4),
+                                    ],
                                     const SizedBox(height: 4),
-                                    Text(bill.customerPhone ?? 'No phone'),
-                                    const SizedBox(height: 8),
                                     Text('${provider.getItemCountForBill(bill.id)} items'),
                                   ],
                                 ),

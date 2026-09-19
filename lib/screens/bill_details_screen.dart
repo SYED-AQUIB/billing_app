@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/bill_provider.dart';
@@ -13,6 +14,14 @@ class BillDetailsScreen extends StatefulWidget {
 }
 
 class _BillDetailsScreenState extends State<BillDetailsScreen> {
+  String _formatBillDate(DateTime createdAt) {
+    return DateFormat('dd/MM/yyyy').format(createdAt);
+  }
+
+  String _formatBillTime(DateTime createdAt) {
+    return DateFormat('hh:mm a').format(createdAt);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -77,11 +86,11 @@ class _BillDetailsScreenState extends State<BillDetailsScreen> {
                             children: [
                               Text('Bill Number: ${bill.billNumber}', style: Theme.of(context).textTheme.titleMedium),
                               const SizedBox(height: 8),
-                              Text('Date: ${bill.createdAt.day}/${bill.createdAt.month}/${bill.createdAt.year}'),
-                              Text('Time: ${bill.createdAt.hour.toString().padLeft(2, '0')}:${bill.createdAt.minute.toString().padLeft(2, '0')}'),
+                              Text('Date: ${_formatBillDate(bill.createdAt)}'),
+                              Text('Time: ${_formatBillTime(bill.createdAt)}'),
                               const SizedBox(height: 8),
-                              Text('Customer: ${bill.customerName ?? 'Walk-in Customer'}'),
-                              Text('Phone: ${bill.customerPhone ?? 'No phone'}'),
+                              if (bill.customerName != null && bill.customerName!.isNotEmpty) Text('Customer: ${bill.customerName}'),
+                              if (bill.customerPhone != null && bill.customerPhone!.isNotEmpty) Text('Phone: ${bill.customerPhone}'),
                             ],
                           ),
                         ),

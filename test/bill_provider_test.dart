@@ -29,4 +29,26 @@ void main() {
       expect(provider.subtotal, 0);
     });
   });
+
+  group('BillProvider customer details', () {
+    test('supports every optional customer detail combination', () {
+      final provider = BillProvider();
+
+      provider.setCustomerDetails(name: '', phone: '');
+      expect(provider.customerName, isNull);
+      expect(provider.customerPhone, isNull);
+
+      provider.setCustomerDetails(name: 'Asha', phone: '');
+      expect(provider.customerName, 'Asha');
+      expect(provider.customerPhone, isNull);
+
+      provider.setCustomerDetails(name: '', phone: '9876543210');
+      expect(provider.customerName, isNull);
+      expect(provider.customerPhone, '9876543210');
+
+      provider.setCustomerDetails(name: 'Asha', phone: '9876543210');
+      expect(provider.customerName, 'Asha');
+      expect(provider.customerPhone, '9876543210');
+    });
+  });
 }
