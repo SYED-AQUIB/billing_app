@@ -163,7 +163,9 @@ class _CartScreenState extends State<CartScreen> {
                     Text('Phone: $customerPhone'),
                     const SizedBox(height: 4),
                   ],
-                  const Divider(),
+                  const Divider(
+                    thickness: 2,
+                    height: 20,),
                   ...provider.cartItems.map(
                     (item) => Padding(
                       padding: const EdgeInsets.only(bottom: 6),
@@ -182,14 +184,9 @@ class _CartScreenState extends State<CartScreen> {
                       ),
                     ),
                   ),
-                  const Divider(),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text('Subtotal'),
-                      Text('₹${provider.subtotal.toStringAsFixed(2)}'),
-                    ],
-                  ),
+                  const Divider(
+                    thickness: 2,
+                    height: 20,),
                   const SizedBox(height: 4),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,

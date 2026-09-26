@@ -20,6 +20,7 @@ class BillingScreen extends StatefulWidget {
 class _BillingScreenState extends State<BillingScreen> {
   final TextEditingController _searchController = TextEditingController();
   int? _selectedCategoryId;
+  bool _isSearching = false;
 
   @override
   void initState() {
@@ -37,7 +38,7 @@ class _BillingScreenState extends State<BillingScreen> {
     super.dispose();
   }
 
-  void _showQuantityDialog(Product product) {
+  Future<void> _showQuantityDialog(Product product) async {
     final quantityController = TextEditingController(text: '1');
     final amountController = TextEditingController(
       text: product.pricePerUnit.toStringAsFixed(2),
@@ -45,280 +46,485 @@ class _BillingScreenState extends State<BillingScreen> {
     final priceController = TextEditingController(
       text: product.pricePerUnit.toStringAsFixed(2),
     );
+
     final isWeightedUnit = _isWeightedUnit(product.unitType);
     final quantityFocusNode = FocusNode();
     final amountFocusNode = FocusNode();
+
     bool amountMode = false;
-    bool updatePrice = false; // checkbox state for permanent price update
+    bool updatePrice = false;
 
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (sheetContext) {
-        return Padding(
-          padding: EdgeInsets.fromLTRB(
-            16,
-            16,
-            16,
-            MediaQuery.of(sheetContext).viewInsets.bottom + 16,
-          ),
-          child: StatefulBuilder(
-            builder: (bottomSheetContext, setBottomSheetState) {
-              final price = double.tryParse(priceController.text);
-              final effectivePrice = price ?? product.pricePerUnit;
-              final amount = double.tryParse(amountController.text);
-              final liveWeight =
-                  amount != null && amount > 0 && effectivePrice > 0
-                      ? amount / effectivePrice
-                      : null;
-              final quantity = double.tryParse(quantityController.text);
-              final liveAmount =
-                  quantity != null && quantity > 0 && effectivePrice > 0
-                      ? quantity * effectivePrice
-                      : null;
+    // Capture providers before the async dialog operation.
+    final productProvider = context.read<ProductProvider>();
+    final billProvider = context.read<BillProvider>();
 
-              return Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          product.name,
-                          style: Theme.of(
-                            bottomSheetContext,
-                          ).textTheme.titleLarge,
-                        ),
-                      ),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: SizedBox(
-                          width: 56,
-                          height: 56,
-                          child: _buildProductImage(
-                            bottomSheetContext,
-                            product,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    product.brand,
-                    style: Theme.of(bottomSheetContext).textTheme.bodyMedium,
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '₹${product.pricePerUnit.toStringAsFixed(2)} / ${product.unitType}',
-                    style: Theme.of(bottomSheetContext).textTheme.bodyMedium,
-                  ),
-                  const SizedBox(height: 16),
-                  // Price override input
-                  TextField(
-                    controller: priceController,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    onChanged: (_) => setBottomSheetState(() {}),
-                    decoration: const InputDecoration(
-                      labelText: 'Price per unit',
-                    ),
-                  ),
-                  CheckboxListTile(
-                    title: const Text('Update product price'),
-                    value: updatePrice,
-                    onChanged: (val) => setBottomSheetState(() => updatePrice = val ?? false),
-                    controlAffinity: ListTileControlAffinity.leading,
-                    contentPadding: EdgeInsets.zero,
-                  ),
-                  if (isWeightedUnit) ...[
-                    SegmentedButton<bool>(
-                      segments: const [
-                        ButtonSegment<bool>(
-                          value: false,
-                          label: Text('Quantity'),
-                        ),
-                        ButtonSegment<bool>(value: true, label: Text('Amount')),
-                      ],
-                      selected: {amountMode},
-                      onSelectionChanged: (selection) {
-                        setBottomSheetState(() => amountMode = selection.first);
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    if (!amountMode) ...[
-                      TextField(
-                        controller: quantityController,
-                        focusNode: quantityFocusNode,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                        onChanged: (_) => setBottomSheetState(() {}),
-                        decoration: InputDecoration(
-                          labelText: 'Quantity (${product.unitType})',
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      if (liveAmount != null)
-                        Text(
-                          'Calculated total: ₹${liveAmount.toStringAsFixed(2)}',
-                          style: Theme.of(bottomSheetContext).textTheme.bodyMedium?.copyWith(
-                            fontWeight: FontWeight.bold,
-                            color: Theme.of(bottomSheetContext).colorScheme.primary,
-                          ),
-                        ),
-                    ] else ...[
-                      TextField(
-                        controller: amountController,
-                        focusNode: amountFocusNode,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                        onChanged: (_) => setBottomSheetState(() {}),
-                        decoration: const InputDecoration(
-                          labelText: 'Amount (₹)',
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      if (liveWeight != null)
-                        Text(
-                          'Calculated weight: ${liveWeight.toStringAsFixed(3)} ${product.unitType}',
-                          style: Theme.of(
-                            bottomSheetContext,
-                          ).textTheme.bodyMedium?.copyWith(
-                            fontWeight: FontWeight.bold,
-                            color: Theme.of(bottomSheetContext).colorScheme.primary,
-                          ),
-                        ),
-                    ],
-                  ] else ...[
+    try {
+      // IMPORTANT:
+      // The dialog ONLY collects the user's input.
+      // ProductProvider is NOT modified while the bottom sheet is open.
+      ModalRoute<dynamic>? sheetRoute;
+
+      final result = await showModalBottomSheet<
+          ({double quantity, double price, bool updatePrice})?>(
+        context: context,
+        isScrollControlled: true,
+        builder: (sheetContext) {
+          sheetRoute ??= ModalRoute.of(sheetContext);
+
+          return Padding(
+            padding: EdgeInsets.fromLTRB(
+              16,
+              16,
+              16,
+              MediaQuery.of(sheetContext).viewInsets.bottom + 16,
+            ),
+            child: StatefulBuilder(
+              builder: (bottomSheetContext, setBottomSheetState) {
+                final price =
+                    double.tryParse(priceController.text.trim());
+                final effectivePrice =
+                    price ?? product.pricePerUnit;
+
+                final amount =
+                    double.tryParse(amountController.text.trim());
+
+                final liveWeight =
+                    amount != null &&
+                            amount > 0 &&
+                            effectivePrice > 0
+                        ? amount / effectivePrice
+                        : null;
+
+                final quantity =
+                    double.tryParse(quantityController.text.trim());
+
+                final liveAmount =
+                    quantity != null &&
+                            quantity > 0 &&
+                            effectivePrice > 0
+                        ? quantity * effectivePrice
+                        : null;
+
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
                     Row(
                       children: [
-                        IconButton.filledTonal(
-                          icon: const Icon(Icons.remove),
-                          onPressed: () {
-                            final current = double.tryParse(quantityController.text) ?? 1;
-                            if (current > 1) {
-                              final next = current - 1;
-                              quantityController.text = next == next.roundToDouble()
-                                  ? next.toInt().toString()
-                                  : next.toString();
-                              setBottomSheetState(() {});
-                            }
-                          },
-                        ),
-                        const SizedBox(width: 8),
                         Expanded(
-                          child: TextField(
-                            controller: quantityController,
-                            focusNode: quantityFocusNode,
-                            keyboardType: const TextInputType.numberWithOptions(
-                              decimal: true,
-                            ),
-                            textAlign: TextAlign.center,
-                            onChanged: (_) => setBottomSheetState(() {}),
-                            decoration: InputDecoration(
-                              labelText: 'Quantity (${product.unitType})',
+                          child: Text(
+                            product.name,
+                            style: Theme.of(
+                              bottomSheetContext,
+                            ).textTheme.titleLarge,
+                          ),
+                        ),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: SizedBox(
+                            width: 56,
+                            height: 56,
+                            child: _buildProductImage(
+                              bottomSheetContext,
+                              product,
                             ),
                           ),
                         ),
-                        const SizedBox(width: 8),
-                        IconButton.filledTonal(
-                          icon: const Icon(Icons.add),
-                          onPressed: () {
-                            final current = double.tryParse(quantityController.text) ?? 0;
-                            final next = current + 1;
-                            quantityController.text = next == next.roundToDouble()
-                                ? next.toInt().toString()
-                                : next.toString();
-                            setBottomSheetState(() {});
-                          },
-                        ),
                       ],
                     ),
+
                     const SizedBox(height: 8),
-                    if (liveAmount != null)
-                      Text(
-                        'Total: ₹${liveAmount.toStringAsFixed(2)}',
-                        style: Theme.of(bottomSheetContext).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: Theme.of(bottomSheetContext).colorScheme.primary,
-                        ),
-                      ),
-                  ],
-                  const SizedBox(height: 16),
-                  SizedBox(
-                    height: 48,
-                    width: double.infinity,
-                    child: FilledButton(
-                      onPressed: () async {
-                        double? parsedQuantity;
-                        // Determine effective price per unit
-                        final effectivePrice = price ?? product.pricePerUnit;
-                        if (isWeightedUnit && amountMode) {
-                          final parsedAmount = double.tryParse(amountController.text);
-                          if (parsedAmount == null || parsedAmount <= 0) {
-                            ScaffoldMessenger.of(bottomSheetContext).showSnackBar(
-                              const SnackBar(content: Text('Enter valid amount')),
-                            );
-                            return;
-                          }
-                          parsedQuantity = parsedAmount / effectivePrice;
-                        } else {
-                          parsedQuantity = double.tryParse(quantityController.text);
-                          if (parsedQuantity == null || parsedQuantity <= 0) {
-                            ScaffoldMessenger.of(bottomSheetContext).showSnackBar(
-                              const SnackBar(content: Text('Enter valid quantity')),
-                            );
-                            return;
-                          }
-                        }
-                        // Capture context-dependent objects before the async gap
-                        final productProvider = context.read<ProductProvider>();
-                        final billProvider = context.read<BillProvider>();
-                        final scaffoldMessenger = ScaffoldMessenger.of(context);
-                        final navigator = Navigator.of(sheetContext);
-                        // If permanent price update requested, update product via provider
-                        if (updatePrice && effectivePrice != product.pricePerUnit) {
-                          final updatedProduct = Product(
-                            id: product.id,
-                            categoryId: product.categoryId,
-                            brand: product.brand,
-                            name: product.name,
-                            unitType: product.unitType,
-                            pricePerUnit: effectivePrice,
-                            imagePath: product.imagePath,
-                            createdAt: product.createdAt,
-                          );
-                          await productProvider.updateProduct(updatedProduct);
-                        }
-                        // Add to cart with the effective price
-                        billProvider.addItem(
-                          product,
-                          quantity: parsedQuantity,
-                          pricePerUnit: effectivePrice,
-                        );
-                        navigator.pop();
-                        scaffoldMessenger.showSnackBar(
-                          const SnackBar(content: Text('Added to Cart')),
-                        );
-                      },
-                      child: const Text('Add to Cart'),
+
+                    Text(
+                      product.brand,
+                      style: Theme.of(
+                        bottomSheetContext,
+                      ).textTheme.bodyMedium,
                     ),
-                  ),
-                ],
-              );
-            },
+
+                    const SizedBox(height: 4),
+
+                    Text(
+                      '₹${product.pricePerUnit.toStringAsFixed(2)} / ${product.unitType}',
+                      style: Theme.of(
+                        bottomSheetContext,
+                      ).textTheme.bodyMedium,
+                    ),
+
+                    const SizedBox(height: 16),
+
+                    // Price override input.
+                    TextField(
+                      controller: priceController,
+                      keyboardType:
+                          const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      onChanged: (_) {
+                        setBottomSheetState(() {});
+                      },
+                      decoration: const InputDecoration(
+                        labelText: 'Price per unit',
+                      ),
+                    ),
+
+                    CheckboxListTile(
+                      title: const Text('Update product price'),
+                      value: updatePrice,
+                      onChanged: (value) {
+                        setBottomSheetState(() {
+                          updatePrice = value ?? false;
+                        });
+                      },
+                      controlAffinity:
+                          ListTileControlAffinity.leading,
+                      contentPadding: EdgeInsets.zero,
+                    ),
+
+                    if (isWeightedUnit) ...[
+                      SegmentedButton<bool>(
+                        segments: const [
+                          ButtonSegment<bool>(
+                            value: false,
+                            label: Text('Quantity'),
+                          ),
+                          ButtonSegment<bool>(
+                            value: true,
+                            label: Text('Amount'),
+                          ),
+                        ],
+                        selected: {amountMode},
+                        onSelectionChanged: (selection) {
+                          setBottomSheetState(() {
+                            amountMode = selection.first;
+                          });
+                        },
+                      ),
+
+                      const SizedBox(height: 12),
+
+                      if (!amountMode) ...[
+                        TextField(
+                          controller: quantityController,
+                          focusNode: quantityFocusNode,
+                          keyboardType:
+                              const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          onChanged: (_) {
+                            setBottomSheetState(() {});
+                          },
+                          decoration: InputDecoration(
+                            labelText:
+                                'Quantity (${product.unitType})',
+                          ),
+                        ),
+
+                        const SizedBox(height: 8),
+
+                        if (liveAmount != null)
+                          Text(
+                            'Calculated total: ₹${liveAmount.toStringAsFixed(2)}',
+                            style: Theme.of(
+                              bottomSheetContext,
+                            ).textTheme.bodyMedium?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                  color: Theme.of(
+                                    bottomSheetContext,
+                                  ).colorScheme.primary,
+                                ),
+                          ),
+                      ] else ...[
+                        TextField(
+                          controller: amountController,
+                          focusNode: amountFocusNode,
+                          keyboardType:
+                              const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          onChanged: (_) {
+                            setBottomSheetState(() {});
+                          },
+                          decoration: const InputDecoration(
+                            labelText: 'Amount (₹)',
+                          ),
+                        ),
+
+                        const SizedBox(height: 8),
+
+                        if (liveWeight != null)
+                          Text(
+                            'Calculated weight: ${liveWeight.toStringAsFixed(3)} ${product.unitType}',
+                            style: Theme.of(
+                              bottomSheetContext,
+                            ).textTheme.bodyMedium?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                  color: Theme.of(
+                                    bottomSheetContext,
+                                  ).colorScheme.primary,
+                                ),
+                          ),
+                      ],
+                    ] else ...[
+                      Row(
+                        children: [
+                          IconButton.filledTonal(
+                            icon: const Icon(Icons.remove),
+                            onPressed: () {
+                              final current =
+                                  double.tryParse(
+                                        quantityController.text,
+                                      ) ??
+                                      1;
+
+                              if (current > 1) {
+                                final next = current - 1;
+
+                                quantityController.text =
+                                    next == next.roundToDouble()
+                                        ? next.toInt().toString()
+                                        : next.toString();
+
+                                setBottomSheetState(() {});
+                              }
+                            },
+                          ),
+
+                          const SizedBox(width: 8),
+
+                          Expanded(
+                            child: TextField(
+                              controller: quantityController,
+                              focusNode: quantityFocusNode,
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                decimal: true,
+                              ),
+                              textAlign: TextAlign.center,
+                              onChanged: (_) {
+                                setBottomSheetState(() {});
+                              },
+                              decoration: InputDecoration(
+                                labelText:
+                                    'Quantity (${product.unitType})',
+                              ),
+                            ),
+                          ),
+
+                          const SizedBox(width: 8),
+
+                          IconButton.filledTonal(
+                            icon: const Icon(Icons.add),
+                            onPressed: () {
+                              final current =
+                                  double.tryParse(
+                                        quantityController.text,
+                                      ) ??
+                                      0;
+
+                              final next = current + 1;
+
+                              quantityController.text =
+                                  next == next.roundToDouble()
+                                      ? next.toInt().toString()
+                                      : next.toString();
+
+                              setBottomSheetState(() {});
+                            },
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(height: 8),
+
+                      if (liveAmount != null)
+                        Text(
+                          'Total: ₹${liveAmount.toStringAsFixed(2)}',
+                          style: Theme.of(
+                            bottomSheetContext,
+                          ).textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.bold,
+                                color: Theme.of(
+                                  bottomSheetContext,
+                                ).colorScheme.primary,
+                              ),
+                        ),
+                    ],
+
+                    const SizedBox(height: 16),
+
+                    SizedBox(
+                      height: 48,
+                      width: double.infinity,
+                      child: FilledButton(
+                        onPressed: () {
+                          final parsedPrice =
+                              double.tryParse(
+                                priceController.text.trim(),
+                              );
+
+                          final effectivePrice =
+                              parsedPrice ?? product.pricePerUnit;
+
+                          if (effectivePrice <= 0) {
+                            ScaffoldMessenger.of(
+                              bottomSheetContext,
+                            ).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'Enter a valid price',
+                                ),
+                              ),
+                            );
+                            return;
+                          }
+
+                          double? parsedQuantity;
+
+                          if (isWeightedUnit && amountMode) {
+                            final parsedAmount =
+                                double.tryParse(
+                                  amountController.text.trim(),
+                                );
+
+                            if (parsedAmount == null ||
+                                parsedAmount <= 0) {
+                              ScaffoldMessenger.of(
+                                bottomSheetContext,
+                              ).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'Enter valid amount',
+                                  ),
+                                ),
+                              );
+                              return;
+                            }
+
+                            parsedQuantity =
+                                parsedAmount / effectivePrice;
+                          } else {
+                            parsedQuantity =
+                                double.tryParse(
+                                  quantityController.text.trim(),
+                                );
+
+                            if (parsedQuantity == null ||
+                                parsedQuantity <= 0) {
+                              ScaffoldMessenger.of(
+                                bottomSheetContext,
+                              ).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'Enter valid quantity',
+                                  ),
+                                ),
+                              );
+                              return;
+                            }
+                          }
+
+                          // IMPORTANT:
+                          // Do NOT update ProductProvider here.
+                          //
+                          // Return the user's choices first.
+                          // The bottom sheet will close completely before
+                          // ProductProvider.notifyListeners() can occur.
+                          Navigator.of(sheetContext).pop(
+                            (
+                              quantity: parsedQuantity,
+                              price: effectivePrice,
+                              updatePrice: updatePrice,
+                            ),
+                          );
+                        },
+                        child: const Text('Add to Cart'),
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          );
+        },
+      );
+
+      // The bottom sheet has now COMPLETELY CLOSED.
+      //
+      // Only now is it safe to trigger ProductProvider.notifyListeners().
+      if (!mounted || result == null) {
+        return;
+      }
+      // showModalBottomSheet completes when the route is popped,
+      // but the closing transition may still be running.
+      // Wait until the route's overlay entries are fully removed.
+      if (sheetRoute != null) {
+        await sheetRoute!.completed;
+      }
+
+      if (!mounted) {
+        return;
+      }
+
+      // Permanently update the product ONLY when explicitly requested.
+      if (result.updatePrice &&
+          result.price != product.pricePerUnit) {
+        final updatedProduct = Product(
+          id: product.id,
+          categoryId: product.categoryId,
+          brand: product.brand,
+          name: product.name,
+          unitType: product.unitType,
+          pricePerUnit: result.price,
+          imagePath: product.imagePath,
+          createdAt: product.createdAt,
+        );
+
+        final updateSucceeded =
+            await productProvider.updateProduct(updatedProduct);
+
+        if (!mounted) {
+          return;
+        }
+
+        if (!updateSucceeded) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Could not update product price',
+              ),
+            ),
+          );
+          return;
+        }
+      }
+
+      billProvider.addItem(
+        product,
+        quantity: result.quantity,
+        pricePerUnit: result.price,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(
+            content: Text('Added to Cart'),
+            duration: Duration(milliseconds: 350),
+            behavior: SnackBarBehavior.floating,
           ),
         );
-      },
-    ).whenComplete(() {
+    } finally {
       quantityController.dispose();
       amountController.dispose();
       priceController.dispose();
       quantityFocusNode.dispose();
       amountFocusNode.dispose();
-    });
+    }
   }
 
   bool _isWeightedUnit(String unitType) {
@@ -434,42 +640,74 @@ class _BillingScreenState extends State<BillingScreen> {
         }
       },
       child: Scaffold(
-        appBar: AppBar(title: Text('New Bill • $billNumber')),
+        appBar: AppBar(
+          title: _isSearching
+              ? TextField(
+                  controller: _searchController,
+                  autofocus: true,
+                  onChanged: (_) => setState(() {}),
+                  decoration: const InputDecoration(
+                    hintText: 'Search products',
+                    border: InputBorder.none,
+                    isDense: true,
+                  ),
+                )
+              : Text('New Bill • $billNumber'),
+          actions: [
+            IconButton(
+              tooltip: 'Search',
+              icon: Icon(
+                _isSearching ? Icons.close : Icons.search,
+              ),
+              onPressed: () {
+                setState(() {
+                  if (_isSearching) {
+                    _searchController.clear();
+                  }
+                  _isSearching = !_isSearching;
+                });
+              },
+            ),
+          ],
+        ),
         body: Column(
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-              child: TextField(
-                controller: _searchController,
-                onChanged: (_) => setState(() {}),
-                decoration: const InputDecoration(
-                  labelText: 'Search products',
-                  prefixIcon: Icon(Icons.search),
-                ),
-              ),
-            ),
             SizedBox(
-              height: 56,
+              height: 46,
               child: ListView.separated(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
+                padding: const EdgeInsets.symmetric(horizontal: 10),
                 scrollDirection: Axis.horizontal,
                 itemCount: categoryProvider.categories.length + 1,
-                separatorBuilder: (_, _) => const SizedBox(width: 8),
+                separatorBuilder: (_, _) => const SizedBox(width: 6),
                 itemBuilder: (context, index) {
                   if (index == 0) {
                     return ChoiceChip(
-                      label: const Text('All'),
+                      label: const Text(
+                        'All',
+                        style: TextStyle(fontSize: 12),
+                      ),
                       selected: _selectedCategoryId == null,
-                      onSelected: (_) =>
-                          setState(() => _selectedCategoryId = null),
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                      onSelected: (_) {
+                        setState(() => _selectedCategoryId = null);
+                      },
                     );
                   }
+
                   final category = categoryProvider.categories[index - 1];
+
                   return ChoiceChip(
-                    label: Text(category.name),
+                    label: Text(
+                      category.name,
+                      style: const TextStyle(fontSize: 12),
+                    ),
                     selected: _selectedCategoryId == category.id,
-                    onSelected: (_) =>
-                        setState(() => _selectedCategoryId = category.id),
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                    onSelected: (_) {
+                      setState(() => _selectedCategoryId = category.id);
+                    },
                   );
                 },
               ),
@@ -485,16 +723,14 @@ class _BillingScreenState extends State<BillingScreen> {
                             for (final section in sections) ...[
                               SliverToBoxAdapter(
                                 child: Padding(
-                                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                                  padding: const EdgeInsets.fromLTRB(8, 10, 8, 4),
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
                                       Text(
-                                        section.title.toUpperCase(),
+                                        section.title,
                                         style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                                          fontWeight: FontWeight.bold,
-                                          letterSpacing: 1.2,
-                                          color: Theme.of(context).colorScheme.primary,
+                                          fontWeight: FontWeight.w700,
                                         ),
                                       ),
                                       const Divider(),
@@ -505,54 +741,71 @@ class _BillingScreenState extends State<BillingScreen> {
                               SliverPadding(
                                 padding: const EdgeInsets.symmetric(horizontal: 16),
                                 sliver: SliverGrid(
-                                  gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                                    maxCrossAxisExtent: 240,
-                                    mainAxisSpacing: 12,
-                                    crossAxisSpacing: 12,
-                                    childAspectRatio: 0.72,
-                                  ),
+                                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                                                  crossAxisCount: 3,
+                                                  mainAxisSpacing: 8,
+                                                  crossAxisSpacing: 8,
+                                                  childAspectRatio: 0.60,
+                                                ),
                                   delegate: SliverChildBuilderDelegate(
                                     (context, index) {
                                       final product = section.products[index];
                                       return Card(
+                                        margin: EdgeInsets.zero,
+                                        clipBehavior: Clip.antiAlias,
+                                        elevation: 1,
                                         child: InkWell(
                                           onTap: () => _showQuantityDialog(product),
                                           child: Padding(
-                                            padding: const EdgeInsets.all(12),
+                                            padding: const EdgeInsets.all(6),
                                             child: Column(
                                               crossAxisAlignment: CrossAxisAlignment.start,
                                               children: [
-                                                Expanded(
+                                                SizedBox(
+                                                  height: 72,
+                                                  width: double.infinity,
                                                   child: ClipRRect(
-                                                    borderRadius: BorderRadius.circular(8),
-                                                    child: SizedBox.expand(
-                                                      child: _buildProductImage(
-                                                        context,
-                                                        product,
-                                                      ),
+                                                    borderRadius: BorderRadius.circular(6),
+                                                    child: _buildProductImage(
+                                                      context,
+                                                      product,
                                                     ),
                                                   ),
                                                 ),
-                                                const SizedBox(height: 8),
+
+                                                const SizedBox(height: 5),
+
                                                 Text(
                                                   product.name,
-                                                  style: Theme.of(
-                                                    context,
-                                                  ).textTheme.titleMedium,
+                                                  style: const TextStyle(
+                                                    fontSize: 12,
+                                                    fontWeight: FontWeight.w600,
+                                                  ),
                                                   maxLines: 2,
                                                   overflow: TextOverflow.ellipsis,
                                                 ),
-                                                if (product.brand.trim().isNotEmpty) ...[
-                                                  const SizedBox(height: 4),
+
+                                                if (product.brand.trim().isNotEmpty)
                                                   Text(
                                                     product.brand,
+                                                    style: TextStyle(
+                                                      fontSize: 10,
+                                                      color: Theme.of(context)
+                                                          .colorScheme
+                                                          .onSurfaceVariant,
+                                                    ),
                                                     maxLines: 1,
                                                     overflow: TextOverflow.ellipsis,
                                                   ),
-                                                ],
-                                                const SizedBox(height: 4),
+
+                                                const Spacer(),
+
                                                 Text(
-                                                  '${product.unitType} • ₹${product.pricePerUnit.toStringAsFixed(2)}',
+                                                  '₹${product.pricePerUnit.toStringAsFixed(0)} / ${product.unitType}',
+                                                  style: const TextStyle(
+                                                    fontSize: 11,
+                                                    fontWeight: FontWeight.bold,
+                                                  ),
                                                   maxLines: 1,
                                                   overflow: TextOverflow.ellipsis,
                                                 ),
@@ -583,7 +836,7 @@ class _BillingScreenState extends State<BillingScreen> {
         onTap: _openCart,
         child: Container(
           height: 56,
-          padding: const EdgeInsets.symmetric(horizontal: 16),
+          padding: const EdgeInsets.symmetric(horizontal: 8),
           alignment: Alignment.center,
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,

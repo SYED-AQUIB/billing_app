@@ -383,48 +383,120 @@ class _CategoryProductsScreenState extends State<CategoryProductsScreen> {
           else
             Expanded(
               child: GridView.builder(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(8),
                 gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2,
-                  crossAxisSpacing: 12,
-                  mainAxisSpacing: 12,
-                  childAspectRatio: 0.78,
+                  crossAxisCount: 3,
+                  mainAxisSpacing: 8,
+                  crossAxisSpacing: 8,
+                  childAspectRatio: 0.60,
                 ),
                 itemCount: filteredProducts.length,
                 itemBuilder: (context, index) {
                   final product = filteredProducts[index];
+
                   return Card(
+                    margin: EdgeInsets.zero,
+                    clipBehavior: Clip.antiAlias,
+                    elevation: 1,
                     child: InkWell(
                       onTap: () => _showProductDialog(product: product),
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(8),
                       child: Padding(
-                        padding: const EdgeInsets.all(12),
+                        padding: const EdgeInsets.all(5),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(8),
-                              child: product.imagePath != null && product.imagePath!.isNotEmpty
-                                  ? Image.file(File(product.imagePath!), height: 80, width: double.infinity, fit: BoxFit.cover, errorBuilder: (_, _, _) => const Icon(Icons.image_not_supported_outlined, size: 40))
-                                  : const Icon(Icons.shopping_bag_outlined, size: 48),
+                            SizedBox(
+                              height: 64,
+                              width: double.infinity,
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(6),
+                                child: product.imagePath != null &&
+                                        product.imagePath!.isNotEmpty
+                                    ? Image.file(
+                                        File(product.imagePath!),
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (_, _, _) => const Center(
+                                          child: Icon(
+                                            Icons.image_not_supported_outlined,
+                                            size: 28,
+                                          ),
+                                        ),
+                                      )
+                                    : const Center(
+                                        child: Icon(
+                                          Icons.shopping_bag_outlined,
+                                          size: 32,
+                                        ),
+                                      ),
+                              ),
                             ),
-                            const SizedBox(height: 8),
+
+                            const SizedBox(height: 3),
+
                             Text(
                               product.name,
-                              style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+
+                            if (product.brand.trim().isNotEmpty)
+                              Text(
+                                product.brand,
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+
+                            const Spacer(),
+
+                            Text(
+                              '₹${product.pricePerUnit.toStringAsFixed(0)} / ${product.unitType}',
+                              style: const TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                              ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
-                            if (product.brand.isNotEmpty)
-                              Text(product.brand, style: Theme.of(context).textTheme.bodySmall, maxLines: 1, overflow: TextOverflow.ellipsis),
-                            const SizedBox(height: 4),
-                            Text('${product.unitType} • ₹${product.pricePerUnit.toStringAsFixed(2)}', style: Theme.of(context).textTheme.bodySmall),
-                            const Spacer(),
+
+                            const SizedBox(height: 2),
+
                             Row(
                               mainAxisAlignment: MainAxisAlignment.end,
                               children: [
-                                IconButton(icon: const Icon(Icons.edit_outlined), onPressed: () => _showProductDialog(product: product)),
-                                IconButton(icon: const Icon(Icons.delete_outline), onPressed: () => _deleteProduct(product)),
+                                SizedBox(
+                                  width: 28,
+                                  height: 28,
+                                  child: IconButton(
+                                    padding: EdgeInsets.zero,
+                                    iconSize: 17,
+                                    tooltip: 'Edit',
+                                    icon: const Icon(Icons.edit_outlined),
+                                    onPressed: () =>
+                                        _showProductDialog(product: product),
+                                  ),
+                                ),
+                                SizedBox(
+                                  width: 28,
+                                  height: 28,
+                                  child: IconButton(
+                                    padding: EdgeInsets.zero,
+                                    iconSize: 17,
+                                    tooltip: 'Delete',
+                                    icon: const Icon(Icons.delete_outline),
+                                    onPressed: () => _deleteProduct(product),
+                                  ),
+                                ),
                               ],
                             ),
                           ],
