@@ -8,7 +8,9 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Grocery Billing'), findsOneWidget);
-    expect(find.text('Products'), findsOneWidget);
-    expect(find.text('Categories'), findsOneWidget);
+    // Verify the three primary action cards are present
+    expect(find.text('SET CATEGORIES'), findsOneWidget);
+    expect(find.text('NEW BILL'), findsOneWidget);
+    expect(find.text('BILL HISTORY'), findsOneWidget);
   });
 }

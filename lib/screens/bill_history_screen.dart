@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../core/app_constants.dart';
+import '../models/bill_model.dart';
 import '../providers/bill_provider.dart';
 
 class BillHistoryScreen extends StatefulWidget {
@@ -18,8 +19,19 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
   DateTime? _customStartDate;
   DateTime? _customEndDate;
 
-  String _formatBillDateTime(DateTime createdAt) {
-    return '${DateFormat('dd/MM/yyyy').format(createdAt)} • ${DateFormat('hh:mm a').format(createdAt)}';
+  String _getDateHeader(DateTime date) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final billDate = DateTime(date.year, date.month, date.day);
+    final difference = today.difference(billDate).inDays;
+
+    if (difference == 0) {
+      return 'TODAY';
+    } else if (difference == 1) {
+      return 'YESTERDAY';
+    } else {
+      return DateFormat('dd MMM yyyy').format(date).toUpperCase();
+    }
   }
 
   @override
@@ -40,6 +52,13 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
   Widget build(BuildContext context) {
     final provider = context.watch<BillProvider>();
 
+    // Group bills by date header
+    final Map<String, List<BillModel>> groupedBills = {};
+    for (final bill in provider.filteredBills) {
+      final header = _getDateHeader(bill.createdAt);
+      groupedBills.putIfAbsent(header, () => []).add(bill);
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Bill History'),
@@ -52,72 +71,77 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
               controller: _searchController,
               onChanged: (value) => provider.searchBills(value),
               decoration: const InputDecoration(
-                labelText: 'Search bills',
+                labelText: 'Search bills...',
                 prefixIcon: Icon(Icons.search),
               ),
             ),
           ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                FilterChip(
-                  label: const Text('All'),
-                  selected: _filter == 'All',
-                  onSelected: (_) {
-                    setState(() => _filter = 'All');
-                    provider.filterBills('All');
-                  },
-                ),
-                FilterChip(
-                  label: const Text('Today'),
-                  selected: _filter == 'Today',
-                  onSelected: (_) {
-                    setState(() => _filter = 'Today');
-                    provider.filterBills('Today');
-                  },
-                ),
-                FilterChip(
-                  label: const Text('Last 7 Days'),
-                  selected: _filter == 'Last 7 Days',
-                  onSelected: (_) {
-                    setState(() => _filter = 'Last 7 Days');
-                    provider.filterBills('Last 7 Days');
-                  },
-                ),
-                FilterChip(
-                  label: const Text('Last 30 Days'),
-                  selected: _filter == 'Last 30 Days',
-                  onSelected: (_) {
-                    setState(() => _filter = 'Last 30 Days');
-                    provider.filterBills('Last 30 Days');
-                  },
-                ),
-                FilterChip(
-                  label: const Text('Custom Date'),
-                  selected: _filter == 'Custom Date',
-                  onSelected: (_) async {
-                    final picked = await showDateRangePicker(
-                      context: context,
-                      firstDate: DateTime(2020),
-                      lastDate: DateTime.now(),
-                      initialDateRange: _customStartDate != null && _customEndDate != null
-                          ? DateTimeRange(start: _customStartDate!, end: _customEndDate!)
-                          : null,
-                    );
-                    if (picked != null) {
-                      setState(() {
-                        _filter = 'Custom Date';
-                        _customStartDate = picked.start;
-                        _customEndDate = picked.end;
-                      });
-                      provider.filterBillsByDateRange(picked.start, picked.end);
-                    }
-                  },
-                ),
-              ],
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  FilterChip(
+                    label: const Text('All'),
+                    selected: _filter == 'All',
+                    onSelected: (_) {
+                      setState(() => _filter = 'All');
+                      provider.filterBills('All');
+                    },
+                  ),
+                  const SizedBox(width: 8),
+                  FilterChip(
+                    label: const Text('Today'),
+                    selected: _filter == 'Today',
+                    onSelected: (_) {
+                      setState(() => _filter = 'Today');
+                      provider.filterBills('Today');
+                    },
+                  ),
+                  const SizedBox(width: 8),
+                  FilterChip(
+                    label: const Text('Last 7 Days'),
+                    selected: _filter == 'Last 7 Days',
+                    onSelected: (_) {
+                      setState(() => _filter = 'Last 7 Days');
+                      provider.filterBills('Last 7 Days');
+                    },
+                  ),
+                  const SizedBox(width: 8),
+                  FilterChip(
+                    label: const Text('Last 30 Days'),
+                    selected: _filter == 'Last 30 Days',
+                    onSelected: (_) {
+                      setState(() => _filter = 'Last 30 Days');
+                      provider.filterBills('Last 30 Days');
+                    },
+                  ),
+                  const SizedBox(width: 8),
+                  FilterChip(
+                    label: const Text('Custom Date'),
+                    selected: _filter == 'Custom Date',
+                    onSelected: (_) async {
+                      final picked = await showDateRangePicker(
+                        context: context,
+                        firstDate: DateTime(2020),
+                        lastDate: DateTime.now(),
+                        initialDateRange: _customStartDate != null && _customEndDate != null
+                            ? DateTimeRange(start: _customStartDate!, end: _customEndDate!)
+                            : null,
+                      );
+                      if (picked != null) {
+                        setState(() {
+                          _filter = 'Custom Date';
+                          _customStartDate = picked.start;
+                          _customEndDate = picked.end;
+                        });
+                        provider.filterBillsByDateRange(picked.start, picked.end);
+                      }
+                    },
+                  ),
+                ],
+              ),
             ),
           ),
           const SizedBox(height: 8),
@@ -125,55 +149,124 @@ class _BillHistoryScreenState extends State<BillHistoryScreen> {
             child: provider.isLoadingHistory
                 ? const Center(child: CircularProgressIndicator())
                 : provider.filteredBills.isEmpty
-                    ? const Center(
+                    ? Center(
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.receipt_long_outlined, size: 56),
-                            SizedBox(height: 12),
-                            Text('No Bills Yet', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
-                            SizedBox(height: 4),
-                            Text('Generated bills will appear here.'),
+                            Icon(
+                              Icons.receipt_long_outlined,
+                              size: 64,
+                              color: Theme.of(context).colorScheme.outline,
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              'No Bills Found',
+                              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              'Generated bills will appear here.',
+                              style: TextStyle(color: Theme.of(context).colorScheme.outline),
+                            ),
                           ],
                         ),
                       )
-                    : ListView.separated(
-                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                        itemCount: provider.filteredBills.length,
-                        separatorBuilder: (_, _) => const SizedBox(height: 12),
-                        itemBuilder: (context, index) {
-                          final bill = provider.filteredBills[index];
-                          return Card(
-                            child: InkWell(
-                              onTap: () => Navigator.of(context).pushNamed(AppConstants.routeBillDetails, arguments: bill.id),
-                              child: Padding(
-                                padding: const EdgeInsets.all(16),
+                    : ListView.builder(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                        itemCount: groupedBills.keys.length,
+                        itemBuilder: (context, sectionIndex) {
+                          final header = groupedBills.keys.elementAt(sectionIndex);
+                          final bills = groupedBills[header]!;
+
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Padding(
+                                padding: const EdgeInsets.only(top: 16, bottom: 8),
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Row(
-                                      children: [
-                                        Expanded(child: Text(bill.billNumber, style: Theme.of(context).textTheme.titleMedium)),
-                                        Text('₹${bill.total.toStringAsFixed(2)}', style: Theme.of(context).textTheme.titleMedium),
-                                      ],
+                                    Text(
+                                      header,
+                                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                        fontWeight: FontWeight.bold,
+                                        letterSpacing: 1.2,
+                                        color: Theme.of(context).colorScheme.primary,
+                                      ),
                                     ),
-                                    const SizedBox(height: 8),
-                                    Text(_formatBillDateTime(bill.createdAt)),
-                                    const SizedBox(height: 4),
-                                    if (bill.customerName != null && bill.customerName!.isNotEmpty) ...[
-                                      Text('Customer: ${bill.customerName}'),
-                                      const SizedBox(height: 4),
-                                    ],
-                                    if (bill.customerPhone != null && bill.customerPhone!.isNotEmpty) ...[
-                                      Text('Phone: ${bill.customerPhone}'),
-                                      const SizedBox(height: 4),
-                                    ],
-                                    const SizedBox(height: 4),
-                                    Text('${provider.getItemCountForBill(bill.id)} items'),
+                                    const Divider(),
                                   ],
                                 ),
                               ),
-                            ),
+                              ...bills.map((bill) {
+                                final hasCustomer = bill.customerName != null && bill.customerName!.trim().isNotEmpty;
+                                return Card(
+                                  margin: const EdgeInsets.only(bottom: 10),
+                                  child: InkWell(
+                                    borderRadius: BorderRadius.circular(12),
+                                    onTap: () => Navigator.of(context).pushNamed(
+                                      AppConstants.routeBillDetails,
+                                      arguments: bill.id,
+                                    ),
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(16),
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Row(
+                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              Text(
+                                                bill.billNumber,
+                                                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                              Text(
+                                                '₹${bill.total.toStringAsFixed(2)}',
+                                                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                                  fontWeight: FontWeight.bold,
+                                                  color: Theme.of(context).colorScheme.primary,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 6),
+                                          Row(
+                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              if (hasCustomer)
+                                                Text(
+                                                  'Customer: ${bill.customerName!.trim()}',
+                                                  style: Theme.of(context).textTheme.bodyMedium,
+                                                )
+                                              else
+                                                Text(
+                                                  '${provider.getItemCountForBill(bill.id)} items',
+                                                  style: TextStyle(color: Theme.of(context).colorScheme.outline),
+                                                ),
+                                              Text(
+                                                DateFormat('hh:mm a').format(bill.createdAt),
+                                                style: TextStyle(color: Theme.of(context).colorScheme.outline),
+                                              ),
+                                            ],
+                                          ),
+                                          if (bill.customerPhone != null && bill.customerPhone!.trim().isNotEmpty) ...[
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              'Phone: ${bill.customerPhone!.trim()}',
+                                              style: TextStyle(color: Theme.of(context).colorScheme.outline),
+                                            ),
+                                          ],
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              }),
+                            ],
                           );
                         },
                       ),

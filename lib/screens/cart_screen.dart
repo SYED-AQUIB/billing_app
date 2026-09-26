@@ -1,7 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../models/bill_item_model.dart';
+import '../models/bill_model.dart';
 import '../providers/bill_provider.dart';
+import '../providers/shop_settings_provider.dart';
+import '../services/bluetooth_printer_service.dart';
+import '../services/receipt_formatter.dart';
+import '../widgets/printer_selection_dialog.dart';
 
 class CartScreen extends StatefulWidget {
   const CartScreen({super.key});
@@ -52,35 +58,50 @@ class _CartScreenState extends State<CartScreen> {
     final customerDetails = await _showCompletedDialog<({String name, String phone})>(
       builder: (dialogContext) {
         return AlertDialog(
-          title: const Text('Generate Bill'),
+          title: const Text('Customer Details'),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                TextField(controller: nameController, decoration: const InputDecoration(labelText: 'Customer Name (Optional)')),
+                TextField(
+                  controller: nameController,
+                  decoration: const InputDecoration(
+                    labelText: 'Name (optional)',
+                    prefixIcon: Icon(Icons.person_outline),
+                  ),
+                ),
                 const SizedBox(height: 12),
                 TextField(
                   controller: phoneController,
                   keyboardType: TextInputType.phone,
-                  decoration: const InputDecoration(labelText: 'Customer Phone (Optional)'),
+                  decoration: const InputDecoration(
+                    labelText: 'Phone (optional)',
+                    prefixIcon: Icon(Icons.phone_outlined),
+                  ),
                 ),
               ],
             ),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.of(dialogContext).pop(), child: const Text('Cancel')),
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel'),
+            ),
             FilledButton(
               onPressed: () {
                 final phone = phoneController.text.trim();
                 final validPhone = phone.isEmpty || RegExp(r'^\d{10,}$').hasMatch(phone);
                 if (!validPhone) {
-                  ScaffoldMessenger.of(dialogContext).showSnackBar(const SnackBar(content: Text('Enter a valid phone number')));
+                  ScaffoldMessenger.of(dialogContext).showSnackBar(
+                    const SnackBar(content: Text('Enter a valid phone number (at least 10 digits)')),
+                  );
                   return;
                 }
 
                 Navigator.of(dialogContext).pop((name: nameController.text.trim(), phone: phone));
               },
-              child: const Text('Generate'),
+              child: const Text('Continue'),
             ),
           ],
         );
@@ -98,11 +119,15 @@ class _CartScreenState extends State<CartScreen> {
   }
 
   /// Waits until the dialog overlay has been removed before state changes.
-  Future<T?> _showCompletedDialog<T>({required WidgetBuilder builder}) async {
+  Future<T?> _showCompletedDialog<T>({
+    required WidgetBuilder builder,
+    bool barrierDismissible = true,
+  }) async {
     final navigator = Navigator.of(context);
     final route = DialogRoute<T>(
       context: context,
       builder: builder,
+      barrierDismissible: barrierDismissible,
       themes: InheritedTheme.capture(from: context, to: navigator.context),
     );
     final result = await navigator.push(route);
@@ -125,19 +150,23 @@ class _CartScreenState extends State<CartScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text('Bill Number: ${provider.billNumber}'),
+                  Text(
+                    'Bill No: ${provider.billNumber}',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
                   const SizedBox(height: 8),
                   if (customerName != null && customerName.isNotEmpty) ...[
                     Text('Customer: $customerName'),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 4),
                   ],
                   if (customerPhone != null && customerPhone.isNotEmpty) ...[
                     Text('Phone: $customerPhone'),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 4),
                   ],
+                  const Divider(),
                   ...provider.cartItems.map(
                     (item) => Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.only(bottom: 6),
                       child: Row(
                         children: [
                           Expanded(
@@ -154,35 +183,45 @@ class _CartScreenState extends State<CartScreen> {
                     ),
                   ),
                   const Divider(),
-                  Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [const Text('Subtotal'), Text('₹${provider.subtotal.toStringAsFixed(2)}')]),
-                  Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [const Text('Total'), Text('₹${provider.total.toStringAsFixed(2)}')]),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Subtotal'),
+                      Text('₹${provider.subtotal.toStringAsFixed(2)}'),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Total',
+                        style: Theme.of(dialogContext).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      Text(
+                        '₹${provider.total.toStringAsFixed(2)}',
+                        style: Theme.of(dialogContext).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: Theme.of(dialogContext).colorScheme.primary,
+                        ),
+                      ),
+                    ],
+                  ),
                 ],
               ),
             ),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.of(dialogContext).pop(false), child: const Text('Back')),
-            FilledButton(onPressed: () => Navigator.of(dialogContext).pop(true), child: const Text('Confirm')),
-          ],
-        );
-      },
-    );
-
-    if (confirmed == true) {
-      await _showAcknowledgementDialog();
-    }
-  }
-
-  Future<void> _showAcknowledgementDialog() async {
-    final provider = context.read<BillProvider>();
-    final confirmed = await _showCompletedDialog<bool>(
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: const Text('Bill Generated Successfully'),
-          content: const Text('Please confirm that the customer has received the bill.'),
-          actions: [
-            TextButton(onPressed: () => Navigator.of(dialogContext).pop(false), child: const Text('Back')),
-            FilledButton(onPressed: () => Navigator.of(dialogContext).pop(true), child: const Text('Received')),
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Back'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Save & Issue Bill'),
+            ),
           ],
         );
       },
@@ -195,21 +234,25 @@ class _CartScreenState extends State<CartScreen> {
       }
 
       if (saved) {
-        final startNewBill = await _showCompletedDialog<bool>(
-          builder: (dialogContext) {
-            return AlertDialog(
-              title: const Text('Bill Saved Successfully'),
-              content: const Text('Start a new bill.'),
-              actions: [
-                FilledButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(true),
-                  child: const Text('New Bill'),
-                ),
-              ],
-            );
-          },
-        );
-        if (startNewBill == true && mounted) {
+        final savedBill = provider.historyBills.isNotEmpty ? provider.historyBills.first : null;
+        List<BillItemModel> savedBillItems = [];
+        if (savedBill?.id != null) {
+          await provider.loadBillDetails(savedBill!.id!);
+          if (mounted) {
+            savedBillItems = provider.selectedBillItems;
+          }
+        }
+
+        if (!mounted) return;
+
+        if (savedBill != null) {
+          await _showPostSaveSuccessDialog(
+            savedBill: savedBill,
+            savedItems: savedBillItems,
+          );
+        }
+
+        if (mounted) {
           await provider.refreshBillNumber();
           if (mounted) {
             Navigator.of(context).pop();
@@ -219,6 +262,162 @@ class _CartScreenState extends State<CartScreen> {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Cart is empty')));
       }
     }
+  }
+
+  Future<void> _showPostSaveSuccessDialog({
+    required BillModel savedBill,
+    required List<BillItemModel> savedItems,
+  }) async {
+    final BluetoothPrinterService printerService = BluetoothPrinterService();
+    bool isPrinting = false;
+    final messenger = ScaffoldMessenger.of(context);
+    final theme = Theme.of(context);
+
+    await _showCompletedDialog<void>(
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (builderContext, setDialogState) {
+            final hasCustomerName = savedBill.customerName != null && savedBill.customerName!.trim().isNotEmpty;
+            final hasCustomerPhone = savedBill.customerPhone != null && savedBill.customerPhone!.trim().isNotEmpty;
+
+            return AlertDialog(
+              title: const Text('Bill Issued Successfully'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Bill No: ${savedBill.billNumber}',
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Total: Rs. ${savedBill.total.toStringAsFixed(2)}',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 15,
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
+                  if (hasCustomerName) ...[
+                    const SizedBox(height: 4),
+                    Text('Customer: ${savedBill.customerName!.trim()}'),
+                  ],
+                  if (hasCustomerPhone) ...[
+                    const SizedBox(height: 4),
+                    Text('Phone: ${savedBill.customerPhone!.trim()}'),
+                  ],
+                  const SizedBox(height: 6),
+                  Text(
+                    '${savedItems.length} item${savedItems.length == 1 ? '' : 's'}',
+                    style: TextStyle(color: theme.colorScheme.outline),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: isPrinting ? null : () => Navigator.of(dialogContext).pop(),
+                  child: const Text('Done'),
+                ),
+                FilledButton.icon(
+                  onPressed: isPrinting
+                      ? null
+                      : () async {
+                          final selection = await showPrinterSelectionDialog(
+                            context: dialogContext,
+                            printerService: printerService,
+                          );
+
+                          if (selection == null || !mounted) {
+                            return;
+                          }
+
+                          setDialogState(() {
+                            isPrinting = true;
+                          });
+
+                          try {
+                            final connected = await printerService.connect(selection.printer);
+                            if (!connected) {
+                              final errorMsg = printerService.lastError ?? 'Could not connect to the printer.';
+                              messenger.showSnackBar(
+                                SnackBar(
+                                  content: Text(errorMsg),
+                                  backgroundColor: theme.colorScheme.error,
+                                ),
+                              );
+                              return;
+                            }
+
+                            if (!mounted) return;
+
+                            var shopSettings = context.read<ShopSettingsProvider>().settings;
+                            if (shopSettings == null) {
+                              await context.read<ShopSettingsProvider>().loadSettings();
+                              if (mounted) {
+                                shopSettings = context.read<ShopSettingsProvider>().settings;
+                              }
+                            }
+
+                            final bytes = await ReceiptFormatter.generateReceipt(
+                              bill: savedBill,
+                              items: savedItems,
+                              shopSettings: shopSettings,
+                              paperSize: selection.paperSize,
+                            );
+
+                            final printed = await printerService.printBytes(bytes);
+
+                            if (printed) {
+                              messenger.showSnackBar(
+                                const SnackBar(
+                                  content: Text('Bill printed successfully.'),
+                                  backgroundColor: Colors.green,
+                                ),
+                              );
+                            } else {
+                              final errorMsg = printerService.lastError ?? 'Could not send the receipt to the printer.';
+                              messenger.showSnackBar(
+                                SnackBar(
+                                  content: Text(errorMsg),
+                                  backgroundColor: theme.colorScheme.error,
+                                ),
+                              );
+                            }
+                          } catch (e) {
+                            messenger.showSnackBar(
+                              SnackBar(
+                                content: Text('Print error: $e'),
+                                backgroundColor: theme.colorScheme.error,
+                              ),
+                            );
+                          } finally {
+                            await printerService.disconnect();
+                            if (mounted) {
+                              setDialogState(() {
+                                isPrinting = false;
+                              });
+                            }
+                          }
+                        },
+                  icon: isPrinting
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        )
+                      : const Icon(Icons.print),
+                  label: Text(isPrinting ? 'Printing...' : 'Print Bill'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    await printerService.disconnect();
   }
 
   @override

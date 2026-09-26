@@ -10,6 +10,9 @@ class HomeScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
+    // Greeting based on time of day could be dynamic; for simplicity, use a static greeting.
+    const greeting = 'Good afternoon 👋';
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Grocery Billing'),
@@ -22,55 +25,36 @@ class HomeScreen extends StatelessWidget {
       ),
       body: Padding(
         padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Quick Actions',
-              style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Manage products and categories for your shop.',
-              style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-            ),
-            const SizedBox(height: 20),
-            Expanded(
-              child: GridView.count(
-                crossAxisCount: 2,
-                mainAxisSpacing: 16,
-                crossAxisSpacing: 16,
-                childAspectRatio: 1.05,
-                children: [
-                  HomeActionCard(
-                    title: 'New Bill',
-                    icon: Icons.receipt_long_outlined,
-                    onTap: () => Navigator.of(context).pushNamed(AppConstants.routeBilling),
-                  ),
-                  HomeActionCard(
-                    title: 'Products',
-                    icon: Icons.inventory_2_outlined,
-                    onTap: () => Navigator.of(context).pushNamed(AppConstants.routeProducts),
-                  ),
-                  HomeActionCard(
-                    title: 'Categories',
-                    icon: Icons.category_outlined,
-                    onTap: () => Navigator.of(context).pushNamed(AppConstants.routeCategories),
-                  ),
-                  HomeActionCard(
-                    title: 'Bill History',
-                    icon: Icons.history_outlined,
-                    onTap: () => Navigator.of(context).pushNamed(AppConstants.routeBillHistory),
-                  ),
-                  HomeActionCard(
-                    title: 'Settings',
-                    icon: Icons.tune_outlined,
-                    onTap: () => Navigator.of(context).pushNamed(AppConstants.routeSettings),
-                  ),
-                ],
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Greeting
+              Text(
+                greeting,
+                style: theme.textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w600),
               ),
-            ),
-          ],
+              const SizedBox(height: 24),
+              // Primary actions as cards
+              HomeActionCard(
+                title: 'SET CATEGORIES',
+                icon: Icons.category_outlined,
+                onTap: () => Navigator.of(context).pushNamed(AppConstants.routeCategories),
+              ),
+              const SizedBox(height: 16),
+              HomeActionCard(
+                title: 'NEW BILL',
+                icon: Icons.receipt_long_outlined,
+                onTap: () => Navigator.of(context).pushNamed(AppConstants.routeBilling),
+              ),
+              const SizedBox(height: 16),
+              HomeActionCard(
+                title: 'BILL HISTORY',
+                icon: Icons.history_outlined,
+                onTap: () => Navigator.of(context).pushNamed(AppConstants.routeBillHistory),
+              ),
+            ],
+          ),
         ),
       ),
     );

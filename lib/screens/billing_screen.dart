@@ -42,10 +42,14 @@ class _BillingScreenState extends State<BillingScreen> {
     final amountController = TextEditingController(
       text: product.pricePerUnit.toStringAsFixed(2),
     );
+    final priceController = TextEditingController(
+      text: product.pricePerUnit.toStringAsFixed(2),
+    );
     final isWeightedUnit = _isWeightedUnit(product.unitType);
     final quantityFocusNode = FocusNode();
     final amountFocusNode = FocusNode();
     bool amountMode = false;
+    bool updatePrice = false; // checkbox state for permanent price update
 
     showModalBottomSheet<void>(
       context: context,
@@ -60,11 +64,18 @@ class _BillingScreenState extends State<BillingScreen> {
           ),
           child: StatefulBuilder(
             builder: (bottomSheetContext, setBottomSheetState) {
+              final price = double.tryParse(priceController.text);
+              final effectivePrice = price ?? product.pricePerUnit;
               final amount = double.tryParse(amountController.text);
               final liveWeight =
-                  amount != null && amount > 0 && product.pricePerUnit > 0
-                  ? amount / product.pricePerUnit
-                  : null;
+                  amount != null && amount > 0 && effectivePrice > 0
+                      ? amount / effectivePrice
+                      : null;
+              final quantity = double.tryParse(quantityController.text);
+              final liveAmount =
+                  quantity != null && quantity > 0 && effectivePrice > 0
+                      ? quantity * effectivePrice
+                      : null;
 
               return Column(
                 mainAxisSize: MainAxisSize.min,
@@ -104,6 +115,22 @@ class _BillingScreenState extends State<BillingScreen> {
                     style: Theme.of(bottomSheetContext).textTheme.bodyMedium,
                   ),
                   const SizedBox(height: 16),
+                  // Price override input
+                  TextField(
+                    controller: priceController,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    onChanged: (_) => setBottomSheetState(() {}),
+                    decoration: const InputDecoration(
+                      labelText: 'Price per unit',
+                    ),
+                  ),
+                  CheckboxListTile(
+                    title: const Text('Update product price'),
+                    value: updatePrice,
+                    onChanged: (val) => setBottomSheetState(() => updatePrice = val ?? false),
+                    controlAffinity: ListTileControlAffinity.leading,
+                    contentPadding: EdgeInsets.zero,
+                  ),
                   if (isWeightedUnit) ...[
                     SegmentedButton<bool>(
                       segments: const [
@@ -126,10 +153,20 @@ class _BillingScreenState extends State<BillingScreen> {
                         keyboardType: const TextInputType.numberWithOptions(
                           decimal: true,
                         ),
+                        onChanged: (_) => setBottomSheetState(() {}),
                         decoration: InputDecoration(
                           labelText: 'Quantity (${product.unitType})',
                         ),
                       ),
+                      const SizedBox(height: 8),
+                      if (liveAmount != null)
+                        Text(
+                          'Calculated total: ₹${liveAmount.toStringAsFixed(2)}',
+                          style: Theme.of(bottomSheetContext).textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: Theme.of(bottomSheetContext).colorScheme.primary,
+                          ),
+                        ),
                     ] else ...[
                       TextField(
                         controller: amountController,
@@ -137,6 +174,7 @@ class _BillingScreenState extends State<BillingScreen> {
                         keyboardType: const TextInputType.numberWithOptions(
                           decimal: true,
                         ),
+                        onChanged: (_) => setBottomSheetState(() {}),
                         decoration: const InputDecoration(
                           labelText: 'Amount (₹)',
                         ),
@@ -147,64 +185,121 @@ class _BillingScreenState extends State<BillingScreen> {
                           'Calculated weight: ${liveWeight.toStringAsFixed(3)} ${product.unitType}',
                           style: Theme.of(
                             bottomSheetContext,
-                          ).textTheme.bodyMedium,
+                          ).textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: Theme.of(bottomSheetContext).colorScheme.primary,
+                          ),
                         ),
                     ],
                   ] else ...[
-                    TextField(
-                      controller: quantityController,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
-                      ),
-                      decoration: InputDecoration(
-                        labelText: 'Quantity (${product.unitType})',
-                      ),
+                    Row(
+                      children: [
+                        IconButton.filledTonal(
+                          icon: const Icon(Icons.remove),
+                          onPressed: () {
+                            final current = double.tryParse(quantityController.text) ?? 1;
+                            if (current > 1) {
+                              final next = current - 1;
+                              quantityController.text = next == next.roundToDouble()
+                                  ? next.toInt().toString()
+                                  : next.toString();
+                              setBottomSheetState(() {});
+                            }
+                          },
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: TextField(
+                            controller: quantityController,
+                            focusNode: quantityFocusNode,
+                            keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true,
+                            ),
+                            textAlign: TextAlign.center,
+                            onChanged: (_) => setBottomSheetState(() {}),
+                            decoration: InputDecoration(
+                              labelText: 'Quantity (${product.unitType})',
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        IconButton.filledTonal(
+                          icon: const Icon(Icons.add),
+                          onPressed: () {
+                            final current = double.tryParse(quantityController.text) ?? 0;
+                            final next = current + 1;
+                            quantityController.text = next == next.roundToDouble()
+                                ? next.toInt().toString()
+                                : next.toString();
+                            setBottomSheetState(() {});
+                          },
+                        ),
+                      ],
                     ),
+                    const SizedBox(height: 8),
+                    if (liveAmount != null)
+                      Text(
+                        'Total: ₹${liveAmount.toStringAsFixed(2)}',
+                        style: Theme.of(bottomSheetContext).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: Theme.of(bottomSheetContext).colorScheme.primary,
+                        ),
+                      ),
                   ],
                   const SizedBox(height: 16),
                   SizedBox(
                     height: 48,
                     width: double.infinity,
                     child: FilledButton(
-                      onPressed: () {
+                      onPressed: () async {
                         double? parsedQuantity;
+                        // Determine effective price per unit
+                        final effectivePrice = price ?? product.pricePerUnit;
                         if (isWeightedUnit && amountMode) {
-                          final parsedAmount = double.tryParse(
-                            amountController.text,
-                          );
+                          final parsedAmount = double.tryParse(amountController.text);
                           if (parsedAmount == null || parsedAmount <= 0) {
-                            ScaffoldMessenger.of(
-                              bottomSheetContext,
-                            ).showSnackBar(
-                              const SnackBar(
-                                content: Text('Enter valid amount'),
-                              ),
+                            ScaffoldMessenger.of(bottomSheetContext).showSnackBar(
+                              const SnackBar(content: Text('Enter valid amount')),
                             );
                             return;
                           }
-                          parsedQuantity = parsedAmount / product.pricePerUnit;
+                          parsedQuantity = parsedAmount / effectivePrice;
                         } else {
-                          parsedQuantity = double.tryParse(
-                            quantityController.text,
-                          );
+                          parsedQuantity = double.tryParse(quantityController.text);
                           if (parsedQuantity == null || parsedQuantity <= 0) {
-                            ScaffoldMessenger.of(
-                              bottomSheetContext,
-                            ).showSnackBar(
-                              const SnackBar(
-                                content: Text('Enter valid quantity'),
-                              ),
+                            ScaffoldMessenger.of(bottomSheetContext).showSnackBar(
+                              const SnackBar(content: Text('Enter valid quantity')),
                             );
                             return;
                           }
                         }
-                        context.read<BillProvider>().addItem(
+                        // Capture context-dependent objects before the async gap
+                        final productProvider = context.read<ProductProvider>();
+                        final billProvider = context.read<BillProvider>();
+                        final scaffoldMessenger = ScaffoldMessenger.of(context);
+                        final navigator = Navigator.of(sheetContext);
+                        // If permanent price update requested, update product via provider
+                        if (updatePrice && effectivePrice != product.pricePerUnit) {
+                          final updatedProduct = Product(
+                            id: product.id,
+                            categoryId: product.categoryId,
+                            brand: product.brand,
+                            name: product.name,
+                            unitType: product.unitType,
+                            pricePerUnit: effectivePrice,
+                            imagePath: product.imagePath,
+                            createdAt: product.createdAt,
+                          );
+                          await productProvider.updateProduct(updatedProduct);
+                        }
+                        // Add to cart with the effective price
+                        billProvider.addItem(
                           product,
                           quantity: parsedQuantity,
-                          pricePerUnit: product.pricePerUnit,
+                          pricePerUnit: effectivePrice,
                         );
-                        Navigator.of(sheetContext).pop();
-                        ScaffoldMessenger.of(context).showSnackBar(
+                        navigator.pop();
+                        scaffoldMessenger.showSnackBar(
                           const SnackBar(content: Text('Added to Cart')),
                         );
                       },
@@ -220,6 +315,7 @@ class _BillingScreenState extends State<BillingScreen> {
     ).whenComplete(() {
       quantityController.dispose();
       amountController.dispose();
+      priceController.dispose();
       quantityFocusNode.dispose();
       amountFocusNode.dispose();
     });
@@ -275,6 +371,32 @@ class _BillingScreenState extends State<BillingScreen> {
           product.brand.toLowerCase().contains(searchQuery);
       return matchesCategory && matchesSearch;
     }).toList();
+
+    final List<({String title, List<Product> products})> sections = [];
+    if (_selectedCategoryId != null) {
+      final category = categoryProvider.categories
+          .where((c) => c.id == _selectedCategoryId)
+          .firstOrNull;
+      final title = category?.name ?? 'Category';
+      if (filteredProducts.isNotEmpty) {
+        sections.add((title: title, products: filteredProducts));
+      }
+    } else {
+      for (final cat in categoryProvider.categories) {
+        final prods =
+            filteredProducts.where((p) => p.categoryId == cat.id).toList();
+        if (prods.isNotEmpty) {
+          sections.add((title: cat.name, products: prods));
+        }
+      }
+      final knownIds = categoryProvider.categories.map((c) => c.id).toSet();
+      final otherProds = filteredProducts
+          .where((p) => !knownIds.contains(p.categoryId))
+          .toList();
+      if (otherProds.isNotEmpty) {
+        sections.add((title: 'Other', products: otherProds));
+      }
+    }
 
     return PopScope(
       canPop: cartIsEmpty,
@@ -356,93 +478,143 @@ class _BillingScreenState extends State<BillingScreen> {
             Expanded(
               child: productProvider.isLoading
                   ? const Center(child: CircularProgressIndicator())
-                  : GridView.builder(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      gridDelegate:
-                          const SliverGridDelegateWithMaxCrossAxisExtent(
-                            maxCrossAxisExtent: 240,
-                            mainAxisSpacing: 12,
-                            crossAxisSpacing: 12,
-                            childAspectRatio: 0.72,
-                          ),
-                      itemCount: filteredProducts.length,
-                      itemBuilder: (context, index) {
-                        final product = filteredProducts[index];
-                        return Card(
-                          child: InkWell(
-                            onTap: () => _showQuantityDialog(product),
-                            child: Padding(
-                              padding: const EdgeInsets.all(12),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Expanded(
-                                    child: ClipRRect(
-                                      borderRadius: BorderRadius.circular(8),
-                                      child: SizedBox.expand(
-                                        child: _buildProductImage(
-                                          context,
-                                          product,
+                  : filteredProducts.isEmpty
+                      ? const Center(child: Text('No products found'))
+                      : CustomScrollView(
+                          slivers: [
+                            for (final section in sections) ...[
+                              SliverToBoxAdapter(
+                                child: Padding(
+                                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        section.title.toUpperCase(),
+                                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                          fontWeight: FontWeight.bold,
+                                          letterSpacing: 1.2,
+                                          color: Theme.of(context).colorScheme.primary,
                                         ),
                                       ),
-                                    ),
+                                      const Divider(),
+                                    ],
                                   ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    product.name,
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.titleMedium,
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  if (product.brand.trim().isNotEmpty) ...[
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      product.brand,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ],
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    '${product.unitType} • ₹${product.pricePerUnit.toStringAsFixed(2)}',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ],
+                                ),
                               ),
-                            ),
-                          ),
-                        );
-                      },
-                    ),
+                              SliverPadding(
+                                padding: const EdgeInsets.symmetric(horizontal: 16),
+                                sliver: SliverGrid(
+                                  gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                                    maxCrossAxisExtent: 240,
+                                    mainAxisSpacing: 12,
+                                    crossAxisSpacing: 12,
+                                    childAspectRatio: 0.72,
+                                  ),
+                                  delegate: SliverChildBuilderDelegate(
+                                    (context, index) {
+                                      final product = section.products[index];
+                                      return Card(
+                                        child: InkWell(
+                                          onTap: () => _showQuantityDialog(product),
+                                          child: Padding(
+                                            padding: const EdgeInsets.all(12),
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                Expanded(
+                                                  child: ClipRRect(
+                                                    borderRadius: BorderRadius.circular(8),
+                                                    child: SizedBox.expand(
+                                                      child: _buildProductImage(
+                                                        context,
+                                                        product,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 8),
+                                                Text(
+                                                  product.name,
+                                                  style: Theme.of(
+                                                    context,
+                                                  ).textTheme.titleMedium,
+                                                  maxLines: 2,
+                                                  overflow: TextOverflow.ellipsis,
+                                                ),
+                                                if (product.brand.trim().isNotEmpty) ...[
+                                                  const SizedBox(height: 4),
+                                                  Text(
+                                                    product.brand,
+                                                    maxLines: 1,
+                                                    overflow: TextOverflow.ellipsis,
+                                                  ),
+                                                ],
+                                                const SizedBox(height: 4),
+                                                Text(
+                                                  '${product.unitType} • ₹${product.pricePerUnit.toStringAsFixed(2)}',
+                                                  maxLines: 1,
+                                                  overflow: TextOverflow.ellipsis,
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                    childCount: section.products.length,
+                                  ),
+                                ),
+                              ),
+                            ],
+                            const SliverToBoxAdapter(child: SizedBox(height: 16)),
+                          ],
+                        ),
             ),
           ],
         ),
-        floatingActionButton:
-            Selector<BillProvider, ({int count, double total})>(
-              selector: (_, provider) =>
-                  (count: provider.cartItems.length, total: provider.total),
-              builder: (context, cart, _) {
-                if (cart.count == 0) {
-                  return const SizedBox.shrink();
-                }
-
-                return FloatingActionButton.extended(
-                  onPressed: _openCart,
-                  icon: const Icon(Icons.shopping_cart),
-                  label: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Cart (${cart.count})'),
-                      Text('₹${cart.total.toStringAsFixed(2)}'),
-                    ],
+        bottomNavigationBar: Selector<BillProvider, ({int count, double total})>(
+  selector: (_, provider) => (count: provider.cartItems.length, total: provider.total),
+  builder: (context, cart, _) {
+    final isEmpty = cart.count == 0;
+    return Material(
+      elevation: 4,
+      child: InkWell(
+        onTap: _openCart,
+        child: Container(
+          height: 56,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          alignment: Alignment.center,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    Icons.shopping_cart_outlined,
+                    color: Theme.of(context).colorScheme.primary,
                   ),
-                );
-              },
-            ),
+                  const SizedBox(width: 8),
+                  Text(
+                    isEmpty ? 'Cart is empty' : '${cart.count} Items',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ],
+              ),
+              if (!isEmpty)
+                Text(
+                  '₹${cart.total.toStringAsFixed(2)}',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  },
+),
       ),
     );
   }
