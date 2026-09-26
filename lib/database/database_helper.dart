@@ -23,7 +23,7 @@ class DatabaseHelper {
 
     return openDatabase(
       path,
-      version: 4,
+      version: 5,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
       onOpen: (db) async {
@@ -95,22 +95,45 @@ class DatabaseHelper {
       )
     ''');
 
-    await db.execute('CREATE INDEX IF NOT EXISTS idx_categories_name ON categories(name)');
-    await db.execute('CREATE INDEX IF NOT EXISTS idx_products_category_id ON products(categoryId)');
-    await db.execute('CREATE INDEX IF NOT EXISTS idx_products_brand_name ON products(brand, name)');
-    await db.execute('CREATE INDEX IF NOT EXISTS idx_bills_created_at ON bills(createdAt)');
-    await db.execute('CREATE INDEX IF NOT EXISTS idx_bill_items_bill_id ON billItems(billId)');
+    await db.execute('''
+      CREATE TABLE quick_pick_products (
+        product_id INTEGER PRIMARY KEY,
+        position INTEGER NOT NULL DEFAULT 0,
+        FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+      )
+    ''');
+
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_categories_name ON categories(name)',
+    );
+
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_products_category_id ON products(categoryId)',
+    );
+
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_products_brand_name ON products(brand, name)',
+    );
+
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_bills_created_at ON bills(createdAt)',
+    );
+
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_bill_items_bill_id ON billItems(billId)',
+    );
+
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_quick_pick_position '
+      'ON quick_pick_products(position)',
+    );
   }
 
-  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
-    if (oldVersion < 4) {
-      await db.execute('CREATE INDEX IF NOT EXISTS idx_categories_name ON categories(name)');
-      await db.execute('CREATE INDEX IF NOT EXISTS idx_products_category_id ON products(categoryId)');
-      await db.execute('CREATE INDEX IF NOT EXISTS idx_products_brand_name ON products(brand, name)');
-      await db.execute('CREATE INDEX IF NOT EXISTS idx_bills_created_at ON bills(createdAt)');
-      await db.execute('CREATE INDEX IF NOT EXISTS idx_bill_items_bill_id ON billItems(billId)');
-    }
-
+  Future<void> _onUpgrade(
+    Database db,
+    int oldVersion,
+    int newVersion,
+  ) async {
     if (oldVersion < 3) {
       await db.execute('''
         CREATE TABLE IF NOT EXISTS shop_settings (
@@ -122,6 +145,7 @@ class DatabaseHelper {
           createdAt TEXT NOT NULL
         )
       ''');
+
       await db.execute('''
         CREATE TABLE IF NOT EXISTS bills (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -149,6 +173,49 @@ class DatabaseHelper {
           FOREIGN KEY (productId) REFERENCES products(id) ON DELETE RESTRICT
         )
       ''');
+    }
+
+    if (oldVersion < 4) {
+      await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_categories_name ON categories(name)',
+      );
+
+      await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_products_category_id '
+        'ON products(categoryId)',
+      );
+
+      await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_products_brand_name '
+        'ON products(brand, name)',
+      );
+
+      await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_bills_created_at '
+        'ON bills(createdAt)',
+      );
+
+      await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_bill_items_bill_id '
+        'ON billItems(billId)',
+      );
+    }
+
+    // Database version 5:
+    // Add Quick Picks without modifying existing product/billing tables.
+    if (oldVersion < 5) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS quick_pick_products (
+          product_id INTEGER PRIMARY KEY,
+          position INTEGER NOT NULL DEFAULT 0,
+          FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+        )
+      ''');
+
+      await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_quick_pick_position '
+        'ON quick_pick_products(position)',
+      );
     }
   }
 }

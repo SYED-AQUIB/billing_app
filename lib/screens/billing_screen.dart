@@ -28,6 +28,7 @@ class _BillingScreenState extends State<BillingScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<CategoryProvider>().loadCategories();
       context.read<ProductProvider>().loadProducts();
+      context.read<ProductProvider>().loadQuickPicks();
       context.read<BillProvider>().initializeBillNumber();
     });
   }
@@ -530,7 +531,96 @@ class _BillingScreenState extends State<BillingScreen> {
   bool _isWeightedUnit(String unitType) {
     return AppConstants.weightedUnits.contains(unitType);
   }
+  Widget _buildQuickPicks(
+    BuildContext context,
+    ProductProvider productProvider,
+  ) {
+    final quickPickProducts = productProvider.quickPickProductIds
+        .map(
+          (id) => productProvider.products
+              .where((product) => product.id == id)
+              .firstOrNull,
+        )
+        .whereType<Product>()
+        .toList();
 
+    if (quickPickProducts.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return SizedBox(
+      height: 96,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(10, 4, 10, 6),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.star_rounded,
+                  size: 18,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                const SizedBox(width: 5),
+                Text(
+                  'Quick Picks',
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: ListView.separated(
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              scrollDirection: Axis.horizontal,
+              itemCount: quickPickProducts.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 8),
+              itemBuilder: (context, index) {
+                final product = quickPickProducts[index];
+
+                return SizedBox(
+                  width: 78,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(8),
+                    onTap: () => _showQuantityDialog(product),
+                    child: Column(
+                      children: [
+                        Expanded(
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: SizedBox(
+                              width: double.infinity,
+                              child: _buildProductImage(
+                                context,
+                                product,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          product.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
   Widget _buildProductImage(BuildContext context, Product product) {
     final imagePath = product.imagePath?.trim();
     final placeholder = ColoredBox(
@@ -672,6 +762,8 @@ class _BillingScreenState extends State<BillingScreen> {
         ),
         body: Column(
           children: [
+                _buildQuickPicks(context, productProvider),
+
             SizedBox(
               height: 46,
               child: ListView.separated(
@@ -764,15 +856,63 @@ class _BillingScreenState extends State<BillingScreen> {
                                                 SizedBox(
                                                   height: 72,
                                                   width: double.infinity,
-                                                  child: ClipRRect(
-                                                    borderRadius: BorderRadius.circular(6),
-                                                    child: _buildProductImage(
-                                                      context,
-                                                      product,
-                                                    ),
+                                                  child: Stack(
+                                                    children: [
+                                                      Positioned.fill(
+                                                        child: ClipRRect(
+                                                          borderRadius: BorderRadius.circular(6),
+                                                          child: _buildProductImage(
+                                                            context,
+                                                            product,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                      Positioned(
+                                                        top: 2,
+                                                        right: 2,
+                                                        child: Material(
+                                                          color: Theme.of(context)
+                                                              .colorScheme
+                                                              .surface
+                                                              .withValues(alpha: 0.85),
+                                                          shape: const CircleBorder(),
+                                                          child: InkWell(
+                                                            customBorder: const CircleBorder(),
+                                                            onTap: () async {
+                                                              final success = await productProvider.toggleQuickPick(
+                                                                product.id!,
+                                                              );
+
+                                                              if (!context.mounted) {
+                                                                return;
+                                                              }
+
+                                                              if (!success) {
+                                                                ScaffoldMessenger.of(context).showSnackBar(
+                                                                  const SnackBar(
+                                                                    content: Text('Could not update Quick Pick'),
+                                                                  ),
+                                                                );
+                                                              }
+                                                            },
+                                                            child: Padding(
+                                                              padding: const EdgeInsets.all(4),
+                                                              child: Icon(
+                                                                productProvider.isQuickPick(product.id!)
+                                                                    ? Icons.star_rounded
+                                                                    : Icons.star_border_rounded,
+                                                                size: 18,
+                                                                color: productProvider.isQuickPick(product.id!)
+                                                                    ? Theme.of(context).colorScheme.primary
+                                                                    : Theme.of(context).colorScheme.onSurfaceVariant,
+                                                              ),
+                                                            ),
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ],
                                                   ),
                                                 ),
-
                                                 const SizedBox(height: 5),
 
                                                 Text(
